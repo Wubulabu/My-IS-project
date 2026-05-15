@@ -1,0 +1,10 @@
+{
+  "dataset_path": "emoji_dataset.json",
+  "dataset_sha256": "992b983f93e0b7d9c533f0f847f329c5a51722e5631d5a72576b9baa7a57fb90",
+  "doc_builder": "preprocessing.build_doc_text",
+  "kind": "dense_embeddings",
+  "model_name": "paraphrase-multilingual-MiniLM-L12-v2",
+  "normalized": false,
+  "num_records": 2315,
+  "schema_version": 2
+}

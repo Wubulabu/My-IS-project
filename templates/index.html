@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EmojiSearch · Cross-Language Emoji IR</title>
+  <meta name="description" content="跨语言 Emoji 信息检索 · 语义搜索 · 向量运算 · 近邻探索 · 语义旅行">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/style.css?v=8.4">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
+</head>
+<body>
+
+<!-- ── Sticky nav ─────────────────────────────────────────────────── -->
+<nav class="site-nav">
+  <div class="nav-inner">
+    <span class="nav-logo">✦ Emoji<span>Search</span></span>
+    <span class="nav-tagline">跨语言表情包检索系统 · Cross-Language IR</span>
+  </div>
+</nav>
+
+<!-- ── Hero ──────────────────────────────────────────────────────── -->
+<div class="hero">
+  <h1>Find the perfect <span>emoji</span>.</h1>
+  <p>语义搜索 · 向量运算 · 最近邻探索 · 语义旅行 — 5 种检索算法</p>
+</div>
+
+<!-- ── Search ─────────────────────────────────────────────────────── -->
+<div class="search-wrap">
+  <!-- vec bar -->
+  <div id="vec-bar">
+    <strong>🧮 向量运算模式</strong> — 在嵌入空间做算术，探索语义线性组合
+    <div class="vec-examples">
+      <button class="vec-ex-tag" data-expr="smile - happy + cry">smile − happy + cry</button>
+      <button class="vec-ex-tag" data-expr="cat + heart">cat + heart</button>
+      <button class="vec-ex-tag" data-expr="fire - hot + water">fire − hot + water</button>
+      <button class="vec-ex-tag" data-expr="sun - day + night">sun − day + night</button>
+      <button class="vec-ex-tag" data-expr="猫 + 笑">猫 + 笑</button>
+      <button class="vec-ex-tag" data-expr="太阳 - 热 + 冷">太阳 − 热 + 冷</button>
+    </div>
+    <div class="vec-mode-notice">⚡ 向量运算仅使用 Bi-Encoder · 方法选择器已锁定</div>
+  </div>
+
+  <div class="search-bar">
+    <input id="query-input" type="text"
+           placeholder="Search emoji… 中文 / English / 日本語"
+           autocomplete="off" spellcheck="false" aria-label="搜索 Emoji">
+    <button id="search-btn" class="btn-icon" title="搜索" aria-label="搜索">🔍</button>
+    <button id="vec-math-btn" class="btn-icon" title="向量运算模式" aria-label="向量运算模式">🧮</button>
+    <button id="random-btn"   class="btn-icon" title="随机探索" aria-label="随机探索">🎲</button>
+  </div>
+
+  <div class="controls-row controls-methods">
+    <span class="label-sm">方法</span>
+    <div id="method-group" role="group" aria-label="检索方法">
+      <button class="pill" data-method="bm25" aria-pressed="false">BM25</button>
+      <button class="pill" data-method="tfidf" aria-pressed="false">TF-IDF</button>
+      <button class="pill" data-method="dense" aria-pressed="false">Dense 🤖</button>
+      <button class="pill" data-method="bi_encoder" aria-pressed="false">Bi-Encoder 🧠</button>
+      <button class="pill" data-method="hnsw" aria-pressed="false">HNSW</button>
+      <button class="pill" data-method="rerank" aria-pressed="false">Rerank</button>
+      <button class="pill active" data-method="hybrid" aria-pressed="true">Hybrid</button>
+    </div>
+  </div>
+
+  <div class="controls-row controls-filters">
+    <label class="filter-control">
+      <span class="label-sm">数量</span>
+      <select id="topk-select" aria-label="结果数量">
+        <option value="10">10</option>
+        <option value="20" selected>20</option>
+        <option value="30">30</option>
+        <option value="50">50</option>
+      </select>
+    </label>
+    <label class="filter-control category-control">
+      <span class="label-sm">类别</span>
+      <select id="category-select" aria-label="类别筛选">
+        <option value="all">All</option>
+      </select>
+    </label>
+    <label class="debug-toggle filter-control">
+      <input type="checkbox" id="debug-toggle">
+      <span>Debug</span>
+    </label>
+  </div>
+
+  <div class="examples-row token-row">
+    <span class="label-sm">示例</span>
+    <button class="example-tag" data-q="火">🔥 火</button>
+    <button class="example-tag" data-q="爱心">❤️ 爱心</button>
+    <button class="example-tag" data-q="cat">🐱 cat</button>
+    <button class="example-tag" data-q="开心笑脸">😊 开心</button>
+    <button class="example-tag" data-q="music">🎵 music</button>
+    <button class="example-tag" data-q="birthday">🎂 birthday</button>
+    <button class="example-tag" data-q="高雅企鹅">🐧 高雅企鹅</button>
+    <button class="example-tag" data-q="doge">🐕 doge</button>
+    <button class="example-tag" data-q="内卷 打工人">💼 内卷</button>
+    <button class="example-tag" data-q="sleep">😴 sleep</button>
+  </div>
+
+  <div id="history-bar" class="token-row">
+    <div class="history-row" id="history-row">
+      <span class="label-sm">最近</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Main ──────────────────────────────────────────────────────── -->
+<main class="main">
+
+  <div id="vec-result-bar"></div>
+
+  <div id="status-bar">
+    <span id="status-text"></span>
+    <span id="exclude-badge">
+      已排除 <span id="exclude-count">0</span> 个
+      <button class="clear-exclude" id="clear-exclude-btn">✕</button>
+    </span>
+    <span id="method-badge">HYBRID</span>
+  </div>
+  <pre id="debug-panel"></pre>
+
+  <div id="spinner"><div class="spinner-ring"></div><span>检索中…</span></div>
+
+  <!-- ★ Interactive star map -->
+  <section id="star-map-section">
+        <div class="section-eyebrow">✨ 语义星图 · 探索潜隐空间</div>
+        <div id="star-map-wrap">
+          <canvas id="star-map"></canvas>
+          <div id="star-map-labels"></div> <!-- AI Semantic Labels Layer -->
+          <div id="pulse-hud">
+            <div class="pulse-icon">🌌</div>
+            <div class="pulse-info">
+              <div class="pulse-status">Pulse: <span id="pulse-active">Standby</span></div>
+              <div class="pulse-trends" id="pulse-trends"></div>
+            </div>
+          </div>
+          <div id="star-map-legend">
+            <div class="sml-row"><div class="sml-color sml-gold"></div><span>高相关度 / 距离近</span></div>
+            <div class="sml-row"><div class="sml-color sml-blue"></div><span>发散空间 / 距离远</span></div>
+          </div>
+        </div>
+  </section>
+
+  <!-- Similar panel -->
+  <div id="similar-panel">
+    <div class="similar-header">
+      <span class="similar-title" id="similar-title">🔗 最相似的表情</span>
+      <button class="similar-close" id="similar-close">✕</button>
+    </div>
+    <div class="similar-grid" id="similar-grid"></div>
+  </div>
+
+  <div id="empty-state">
+    <div class="empty-icon">🔍</div>
+    <h2>未找到相关 Emoji</h2>
+    <p>换个关键词，或切换检索方法</p>
+  </div>
+
+  <div id="results-grid" role="list"></div>
+
+  <!-- ── 语义旅行 ─────────────────────────────────────────────── -->
+  <div class="feature-card journey-card">
+    <div class="feature-title">🛣️ 语义旅行 <span class="section-kicker">(Semantic Journey)</span></div>
+    <div class="feature-desc">
+      在词嵌入空间中，从一个概念"旅行"到另一个概念 — 探索中间的语义过渡地带，直观感受向量空间的拓扑结构。
+    </div>
+    <div class="journey-bar">
+      <input id="journey-from" class="journey-input" type="text" placeholder="起点，如 fire">
+      <span class="journey-arrow">→</span>
+      <input id="journey-to" class="journey-input" type="text" placeholder="终点，如 water">
+      <button id="journey-btn" class="journey-submit">探索 ✦</button>
+    </div>
+    <div class="journey-examples">
+      <span class="label-sm">试试</span>
+      <button class="journey-ex" data-from="fire" data-to="water">fire → water</button>
+      <button class="journey-ex" data-from="happy" data-to="sad">happy → sad</button>
+      <button class="journey-ex" data-from="sun" data-to="moon">sun → moon</button>
+      <button class="journey-ex" data-from="猫" data-to="狗">猫 → 狗</button>
+      <button class="journey-ex" data-from="baby" data-to="old man">baby → old</button>
+    </div>
+    <div id="journey-result"></div>
+  </div>
+
+  <div class="feature-card narrative-card" id="narrative-lab">
+    <h2>🎞️ 表情包剧本实验室 <span class="section-kicker">(Meme Script Lab)</span></h2>
+    <p class="section-desc">将叙事转化为视觉流。我们的 AI 代理将策划、编排并从数千个候选者中选出最契合的情境符号。</p>
+    
+    <div class="story-magic-bar">
+      <span class="magic-hint">尝试灵感:</span>
+      <button class="magic-btn" data-genre="adventure">🌌 银河</button>
+      <button class="magic-btn" data-genre="cyberpunk">🦾 赛博</button>
+      <button class="magic-btn" data-genre="nature">🌿 森林</button>
+      <button class="magic-btn" data-genre="romance">💖 浪漫</button>
+      <button class="magic-btn" data-genre="mystery">🔍 侦探</button>
+    </div>
+    <div class="story-input-box">
+      <textarea id="story-input" rows="3" placeholder="输入故事灵感，如：'一次穿越银河系的孤独旅行'"></textarea>
+      <div class="story-controls">
+        <label class="ai-toggle">
+          <input type="checkbox" id="story-ai-toggle" checked>
+          <span class="ai-toggle-label">AI 智能检索 (Agentic IR)</span>
+        </label>
+        <button id="story-btn" class="story-submit">编绘剧本 🎞️</button>
+      </div>
+    </div>
+    <div id="story-reasoning-trace"></div>
+    <div id="story-result-wrap">
+      <div id="story-sequence"></div>
+    </div>
+  </div>
+
+  <!-- ── 评测板块 ────────────────────────────────────────────── -->
+  <section class="eval-section">
+    <h2>📊 算法评测对比 <span class="section-kicker">(Algorithm Evaluation)</span></h2>
+    <p class="section-desc">在 50 条标注查询上对比各检索方法的精准率、召回率、NDCG 等指标</p>
+    
+    <div class="metric-desc">
+      <!-- MAP -->
+      <div class="metric-item">
+        <div class="metric-header">
+          <div class="metric-icon-wrap">🎯</div>
+          <div class="metric-name">平均准确率均值<span>Mean Average Precision</span></div>
+          <div class="metric-badge">Ranking</div>
+        </div>
+        <div class="metric-body">
+          <p><strong>核心定义：</strong>衡量整体排序质量。相关结果越靠前，MAP 值越高。</p>
+          <div class="metric-analogy">💡 就像考试：不仅要答对，还要把分值最高的题先做完。</div>
+        </div>
+      </div>
+
+      <!-- MRR -->
+      <div class="metric-item">
+        <div class="metric-header">
+          <div class="metric-icon-wrap">🚀</div>
+          <div class="metric-name">平均倒数排名<span>Mean Reciprocal Rank</span></div>
+          <div class="metric-badge">Efficiency</div>
+        </div>
+        <div class="metric-body">
+          <p><strong>核心定义：</strong>关注首个相关结果排名，反映系统“一击即中”的能力。</p>
+          <div class="metric-analogy">💡 就像找钥匙：你只想知道翻第几个口袋能摸到它。</div>
+        </div>
+      </div>
+
+      <!-- NDCG -->
+      <div class="metric-item">
+        <div class="metric-header">
+          <div class="metric-icon-wrap">⚖️</div>
+          <div class="metric-name">归一化折损收益<span>NDCG@10</span></div>
+          <div class="metric-badge">Relevance</div>
+        </div>
+        <div class="metric-body">
+          <p><strong>核心定义：</strong>要求“最相关”的结果排在最顶端，对位置下滑有严厉惩罚。</p>
+          <div class="metric-analogy">💡 就像金牌榜：金牌权重大于银牌，位置必须分明。</div>
+        </div>
+      </div>
+
+      <!-- P@K -->
+      <div class="metric-item">
+        <div class="metric-header">
+          <div class="metric-icon-wrap">📏</div>
+          <div class="metric-name">精准率与召回率<span>Precision & Recall</span></div>
+          <div class="metric-badge">Balance</div>
+        </div>
+        <div class="metric-body">
+          <p><strong>核心定义：</strong>精准率看搜得对不对，召回率看搜得全不全，两者需要平衡。</p>
+          <div class="metric-analogy">💡 就像网鱼：既希望网里的都是鱼，又希望海里的鱼别漏。</div>
+        </div>
+      </div>
+
+      <!-- F1 -->
+      <div class="metric-item">
+        <div class="metric-header">
+          <div class="metric-icon-wrap">🛠️</div>
+          <div class="metric-name">F1 综合分数<span>F1-Score</span></div>
+          <div class="metric-badge">Synthesis</div>
+        </div>
+        <div class="metric-body">
+          <p><strong>核心定义：</strong>精准率和召回率的调和平均数，反映算法是否足够“稳健”。</p>
+          <div class="metric-analogy">💡 就像全能运动员：不偏科，各项素质发展平衡。</div>
+        </div>
+      </div>
+
+      <!-- Observation -->
+      <div class="metric-item">
+        <div class="metric-header">
+          <div class="metric-icon-wrap">🔍</div>
+          <div class="metric-name">观察窗口对比<span>@5 vs @10</span></div>
+          <div class="metric-badge">Stability</div>
+        </div>
+        <div class="metric-body">
+          <p><strong>核心定义：</strong>对比前 5 名和前 10 名的差异，揭示极短距离内的排序稳定性。</p>
+          <div class="metric-analogy">💡 就像短跑：起跑（@5）和冲刺（@10）的表现可能不同。</div>
+        </div>
+      </div>
+    </div>
+
+    <button id="run-eval-btn">🏁 开启算力角斗场 (Live Arena) ✦</button>
+    <div id="eval-results">
+      
+      <!-- Live Arena Race Track -->
+      <div id="arena-track" class="arena-container">
+        <div class="arena-header">
+          <h3>🏎️ 算法竞速实况 <span id="arena-status">( 0 / 50 )</span></h3>
+          <p id="arena-current-query" class="arena-query-display">等待注入发令枪...</p>
+        </div>
+        <div id="arena-lanes" class="arena-lanes">
+          <!-- Lanes will be injected by JS -->
+        </div>
+      </div>
+
+      <!-- Live Emoji Stream -->
+      <div id="arena-stream" class="arena-stream">
+        <h4>📡 实时召回探针 (Live Feed)</h4>
+        <div id="stream-content" class="stream-content"></div>
+      </div>
+
+      <div id="eval-table-wrap"></div>
+      <div id="eval-failures" class="eval-failures"></div>
+      
+      <div class="eval-charts-grid">
+        <div class="chart-container"><canvas id="eval-bar-chart"></canvas></div>
+        <div class="chart-container"><canvas id="eval-radar-chart"></canvas></div>
+      </div>
+      
+      <!-- AI Algorithm Diagnostic Terminal -->
+      <div id="ai-jury-results" class="ai-jury-box">
+        <h3>📊 首席架构师复盘 <span class="section-kicker">(Algorithm Evaluation Copilot)</span></h3>
+        
+        <div id="jury-loading" class="jury-loading-wrap">
+          <div class="ai-glow-ring"></div>
+          <div class="flashing-dots">评测已完成。AI架构师正在撰写万字诊断长文（开玩笑，马上就好）...</div>
+        </div>
+
+        <div id="jury-verdict-content"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="toast"></div>
+  <script src="static/app.js?v=9.1"></script>
+</body>
+</html>

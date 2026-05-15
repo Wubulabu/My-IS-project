@@ -1,0 +1,51 @@
+{
+  "base_url": "http://127.0.0.1:5000",
+  "runs": 2,
+  "top_k": 10,
+  "queries": [
+    "开心",
+    "火",
+    "猫",
+    "dog",
+    "love heart",
+    "工作",
+    "雨",
+    "music",
+    "angry",
+    "winter",
+    "snake",
+    "party"
+  ],
+  "results": [
+    {
+      "method": "bm25",
+      "samples": 24,
+      "errors": 0,
+      "avg_ms": 11.11,
+      "p50_ms": 7.84,
+      "p95_ms": 27.74,
+      "max_ms": 32.83,
+      "min_ms": 4.8
+    },
+    {
+      "method": "tfidf",
+      "samples": 24,
+      "errors": 0,
+      "avg_ms": 9.89,
+      "p50_ms": 7.48,
+      "p95_ms": 28.31,
+      "max_ms": 32.01,
+      "min_ms": 4.36
+    },
+    {
+      "method": "bi_encoder",
+      "samples": 24,
+      "errors": 0,
+      "avg_ms": 35.65,
+      "p50_ms": 30.05,
+      "p95_ms": 52.25,
+      "max_ms": 120.48,
+      "min_ms": 21.69
+    }
+  ]
+}

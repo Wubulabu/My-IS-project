@@ -1,0 +1,12 @@
+{
+  "dataset_path": "emoji_dataset.json",
+  "dataset_sha256": "992b983f93e0b7d9c533f0f847f329c5a51722e5631d5a72576b9baa7a57fb90",
+  "doc_builder": "preprocessing.build_doc_text",
+  "kind": "bi_encoder_embeddings",
+  "max_length": 128,
+  "model_name": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "normalized": true,
+  "num_records": 2315,
+  "pooling": "mean_pooling_attention_mask",
+  "schema_version": 2
+}
