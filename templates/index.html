@@ -22,7 +22,7 @@
 <!-- ── Hero ──────────────────────────────────────────────────────── -->
 <div class="hero">
   <h1>Find the perfect <span>emoji</span>.</h1>
-  <p>语义搜索 · 向量运算 · 最近邻探索 · 语义旅行 — 5 种检索算法</p>
+  <p>文本语义 · 视觉对齐 · 词法融合 · 向量探索</p>
 </div>
 
 <!-- ── Search ─────────────────────────────────────────────────────── -->
@@ -53,15 +53,28 @@
   <div class="controls-row controls-methods">
     <span class="label-sm">方法</span>
     <div id="method-group" role="group" aria-label="检索方法">
-      <button class="pill" data-method="bm25" aria-pressed="false">BM25</button>
-      <button class="pill" data-method="tfidf" aria-pressed="false">TF-IDF</button>
-      <button class="pill" data-method="dense" aria-pressed="false">Dense 🤖</button>
-      <button class="pill" data-method="bi_encoder" aria-pressed="false">Bi-Encoder 🧠</button>
-      <button class="pill" data-method="hnsw" aria-pressed="false">HNSW</button>
-      <button class="pill" data-method="rerank" aria-pressed="false">Rerank</button>
-      <button class="pill active" data-method="hybrid" aria-pressed="true">Hybrid</button>
+      <div class="method-section">
+        <span class="method-section-label">Text</span>
+        <div class="method-pills">
+          <button class="pill" data-method="bm25" aria-pressed="false">BM25</button>
+          <button class="pill" data-method="tfidf" aria-pressed="false">TF-IDF</button>
+          <button class="pill" data-method="dense" aria-pressed="false">Dense</button>
+          <button class="pill" data-method="bi_encoder" aria-pressed="false">Bi-Encoder</button>
+          <button class="pill" data-method="hnsw" aria-pressed="false">HNSW</button>
+          <button class="pill" data-method="rerank" aria-pressed="false">Rerank</button>
+          <button class="pill active" data-method="hybrid" aria-pressed="true">Hybrid</button>
+        </div>
+      </div>
+      <div class="method-section method-section-mm">
+        <span class="method-section-label">Multimodal</span>
+        <div class="method-pills">
+          <button class="pill" data-method="visual" aria-pressed="false">Visual</button>
+          <button class="pill" data-method="mm_hybrid" aria-pressed="false">MM-Hybrid</button>
+        </div>
+      </div>
     </div>
   </div>
+  <div id="visual-status-note" class="method-note"></div>
 
   <div class="controls-row controls-filters">
     <label class="filter-control">
@@ -120,6 +133,8 @@
     <span id="method-badge">HYBRID</span>
   </div>
   <pre id="debug-panel"></pre>
+
+  <section id="mm-compare" class="mm-compare" aria-label="多模态解释对比"></section>
 
   <div id="spinner"><div class="spinner-ring"></div><span>检索中…</span></div>
 

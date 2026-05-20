@@ -6,5 +6,11 @@
  <o:File HRef="colorschememapping.xml"/>
  <o:File HRef="image001.png"/>
  <o:File HRef="image002.gif"/>
+ <o:File HRef="feature_search_debug.png"/>
+ <o:File HRef="feature_similar_panel.png"/>
+ <o:File HRef="feature_semantic_journey.png"/>
+ <o:File HRef="feature_vector_math.png"/>
+ <o:File HRef="feature_storyboard_lab.png"/>
+ <o:File HRef="feature_eval_arena.png"/>
  <o:File HRef="filelist.xml"/>
 </xml>

@@ -1,0 +1,92 @@
+[
+  {
+    "id": "mm01",
+    "query": "red heart love symbol",
+    "lang": "en",
+    "relevant": ["❤️", "♥️", "💖", "💘", "💝", "💗", "💓", "💞", "💕"]
+  },
+  {
+    "id": "mm02",
+    "query": "blue heart color",
+    "lang": "en",
+    "relevant": ["💙", "🩵"]
+  },
+  {
+    "id": "mm03",
+    "query": "green heart color",
+    "lang": "en",
+    "relevant": ["💚"]
+  },
+  {
+    "id": "mm04",
+    "query": "orange heart color",
+    "lang": "en",
+    "relevant": ["🧡"]
+  },
+  {
+    "id": "mm05",
+    "query": "yellow smiling face",
+    "lang": "en",
+    "relevant": ["😀", "😃", "😄", "😁", "😊", "🙂", "☺️"]
+  },
+  {
+    "id": "mm06",
+    "query": "crying face tears",
+    "lang": "en",
+    "relevant": ["😢", "😭", "🥲", "😿"]
+  },
+  {
+    "id": "mm07",
+    "query": "cat face expression",
+    "lang": "en",
+    "relevant": ["😺", "😸", "😹", "😻", "😼", "😽", "🙀", "😿", "😾"]
+  },
+  {
+    "id": "mm08",
+    "query": "dog face animal",
+    "lang": "en",
+    "relevant": ["🐶", "🐕", "🦮", "🐕‍🦺"]
+  },
+  {
+    "id": "mm09",
+    "query": "crown royal gold",
+    "lang": "en",
+    "relevant": ["👑", "🤴", "👸"]
+  },
+  {
+    "id": "mm10",
+    "query": "rain umbrella blue weather",
+    "lang": "en",
+    "relevant": ["☔", "🌂", "🌧️", "⛈️", "🌦️"]
+  },
+  {
+    "id": "mm11",
+    "query": "phone device screen",
+    "lang": "en",
+    "relevant": ["📱", "📲", "☎️", "📞", "📟"]
+  },
+  {
+    "id": "mm12",
+    "query": "airplane flight travel",
+    "lang": "en",
+    "relevant": ["✈️", "🛫", "🛬", "🛩️"]
+  },
+  {
+    "id": "mm13",
+    "query": "warning triangle sign",
+    "lang": "en",
+    "relevant": ["⚠️", "🚸", "🔺", "🔻"]
+  },
+  {
+    "id": "mm14",
+    "query": "rainbow colorful arc",
+    "lang": "en",
+    "relevant": ["🌈", "🏳️‍🌈"]
+  },
+  {
+    "id": "mm15",
+    "query": "moon night crescent",
+    "lang": "en",
+    "relevant": ["🌙", "🌛", "🌜", "🌚", "🌝", "🌘", "🌗", "🌖", "🌕"]
+  }
+]

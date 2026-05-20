@@ -1,0 +1,16 @@
+{
+  "alignment_version": "clip_ridge_visual_to_biencoder_v1",
+  "dataset_path": "emoji_dataset.json",
+  "dataset_sha256": "992b983f93e0b7d9c533f0f847f329c5a51722e5631d5a72576b9baa7a57fb90",
+  "feature_backend": "clip",
+  "feature_version": "clip_vit_base_patch32_image_v1",
+  "image_size": 128,
+  "kind": "visual_alignment",
+  "num_records": 2315,
+  "renderer_font": "C:\\WINDOWS\\Fonts\\seguiemj.ttf",
+  "schema_version": 2,
+  "text_embedding_file": "bi_encoder_embeddings.npy",
+  "text_embedding_sha256": "e741dc5ba5911d0d659793e408f8ed4c29357eeae8909335ff5057fde4385a80",
+  "visual_method": "clip_image_encoder_ridge_alignment",
+  "visual_model": "openai/clip-vit-base-patch32"
+}

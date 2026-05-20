@@ -8,7 +8,8 @@ Usage
 -----
     cd IS/
     python eval/evaluate.py                  # BM25 + TF-IDF only (fast)
-    python eval/evaluate.py --all            # also include Dense (slower)
+    python eval/evaluate.py --all            # include all retrieval methods
+    python eval/evaluate.py --ablation       # MM-Hybrid ablation table
     python eval/evaluate.py --save results/  # save per-query CSV
 """
 
@@ -25,8 +26,8 @@ QUERIES_F  = os.path.join(DATA_DIR, "eval_queries.json")
 DATASET_F  = os.path.join(DATA_DIR, "emoji_dataset.json")
 
 
-def load_queries():
-    with open(QUERIES_F, "r", encoding="utf-8") as f:
+def load_queries(path: str = QUERIES_F):
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -99,17 +100,24 @@ def save_csv(rows, ks, save_dir):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--all",  action="store_true",
-                        help="Include dense/bi_encoder/hnsw retrieval (requires model + index)")
+                        help="Include all retrieval methods (requires model + index)")
+    parser.add_argument("--ablation", action="store_true",
+                        help="Run MM-Hybrid, without-visual, without-lexical, and visual-only")
     parser.add_argument("--save", default="",
                         help="Directory to save CSV results")
     parser.add_argument("--strict", action="store_true",
                         help="Stop immediately if any method fails")
+    parser.add_argument("--queries", default=QUERIES_F,
+                        help="Evaluation query JSON file")
     args = parser.parse_args()
 
     ks = [5, 10]
-    methods = ["bm25", "tfidf"]
-    if args.all:
-        methods += ["dense", "bi_encoder", "hnsw", "rerank", "hybrid"]
+    if args.ablation:
+        methods = ["mm_hybrid", "mm_hybrid_no_visual", "mm_hybrid_no_lexical", "visual"]
+    else:
+        methods = ["bm25", "tfidf"]
+    if args.all and not args.ablation:
+        methods += ["dense", "bi_encoder", "hnsw", "rerank", "hybrid", "visual", "mm_hybrid"]
 
     print("="*60)
     print("  Emoji IR System — Evaluation")
@@ -121,7 +129,7 @@ def main():
     engine.load(methods=methods)
 
     print("[2/3] Loading evaluation queries …")
-    queries = load_queries()
+    queries = load_queries(args.queries)
     gt      = build_ground_truth(queries)
     print(f"  {len(queries)} queries, {sum(len(v) for v in gt.values())} total relevant items")
 

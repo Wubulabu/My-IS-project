@@ -16,6 +16,8 @@ const debugPanel    = document.getElementById('debug-panel');
 const statusBar     = document.getElementById('status-bar');
 const statusText    = document.getElementById('status-text');
 const methodBadge   = document.getElementById('method-badge');
+const visualStatusNote = document.getElementById('visual-status-note');
+const mmCompare     = document.getElementById('mm-compare');
 const excludeBadge  = document.getElementById('exclude-badge');
 const excludeCount  = document.getElementById('exclude-count');
 const clearExclude  = document.getElementById('clear-exclude-btn');
@@ -62,6 +64,11 @@ let lastQuery     = '';
 let _abortCtrl    = null;
 let evalChartObj  = null;
 let evalRadarObj  = null;
+let systemStatus   = null;
+let visualIndexReady = true;
+let mmCompareCache = { key: '', html: '' };
+
+const VISUAL_METHODS = new Set(['visual', 'mm_hybrid']);
 
 // ── toast ────────────────────────────────────────────────────────────────
 let _toastTimer;
@@ -121,16 +128,55 @@ if (debugToggle) {
 }
 
 // ── method pills ─────────────────────────────────────────────────────────
+function syncMethodButtons() {
+    methodGroup.querySelectorAll('.pill').forEach(b => {
+        const isActive = b.dataset.method === currentMethod;
+        b.classList.toggle('active', isActive);
+        b.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+}
+
+function applyMethodAvailability() {
+    if (!visualIndexReady && VISUAL_METHODS.has(currentMethod)) {
+        currentMethod = 'hybrid';
+    }
+    methodGroup.querySelectorAll('.pill').forEach(b => {
+        const needsVisual = VISUAL_METHODS.has(b.dataset.method);
+        const unavailable = needsVisual && !visualIndexReady;
+        b.disabled = isVecMode || unavailable;
+        b.classList.toggle('unavailable', unavailable);
+        b.title = unavailable ? '视觉索引未就绪，请先构建 CLIP 视觉索引' : '';
+    });
+    syncMethodButtons();
+}
+
+async function loadSystemStatus() {
+    try {
+        const resp = await fetch('/api/status');
+        const data = await resp.json();
+        systemStatus = data;
+        visualIndexReady = !!data.visual_index_ready;
+        if (visualStatusNote) {
+            if (visualIndexReady) {
+                visualStatusNote.style.display = 'none';
+                visualStatusNote.textContent = '';
+            } else {
+                visualStatusNote.style.display = 'block';
+                visualStatusNote.textContent = `Visual/MM-Hybrid 已禁用：${data.visual_index_message || '视觉索引未就绪'}`;
+            }
+        }
+        applyMethodAvailability();
+    } catch(e) {
+        console.warn('status load failed', e);
+    }
+}
+loadSystemStatus();
+
 methodGroup.querySelectorAll('.pill').forEach(btn => {
     btn.addEventListener('click', () => {
-        if (isVecMode) return;
-        methodGroup.querySelectorAll('.pill').forEach(b => {
-            b.classList.remove('active');
-            b.setAttribute('aria-pressed', 'false');
-        });
-        btn.classList.add('active');
-        btn.setAttribute('aria-pressed', 'true');
+        if (isVecMode || btn.disabled) return;
         currentMethod = btn.dataset.method;
+        syncMethodButtons();
         if (queryInput.value.trim()) doSearch();
     });
 });
@@ -139,19 +185,15 @@ function setVecMode(on) {
     isVecMode = on;
     vecMathBtn.classList.toggle('active', on);
     vecBar.classList.toggle('show', on);
-    methodGroup.querySelectorAll('.pill').forEach(b => b.disabled = on);
     if (on) {
+        applyMethodAvailability();
         queryInput.placeholder = 'try: smile - happy + cry';
         showToast('🧮 向量运算模式已开启');
         queryInput.focus();
     } else {
         queryInput.placeholder = 'Search emoji… 中文 / English / 日本語';
         vecResultBar.style.display = 'none';
-        methodGroup.querySelectorAll('.pill').forEach(b => {
-            const isActive = b.dataset.method === currentMethod;
-            b.classList.toggle('active', isActive);
-            b.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-        });
+        applyMethodAvailability();
     }
 }
 vecMathBtn.addEventListener('click', () => setVecMode(!isVecMode));
@@ -230,6 +272,24 @@ journeyBtn.onclick = doJourney;
 document.querySelectorAll('.journey-ex').forEach(btn => { btn.onclick = () => { journeyFrom.value = btn.dataset.from; journeyTo.value = btn.dataset.to; doJourney(); }; });
 
 // ── results ──────────────────────────────────────────────────────────────
+function renderModalityBars(scores) {
+    if (!scores || typeof scores !== 'object') return '';
+    const fields = [
+        ['semantic', 'Text'],
+        ['visual', 'Visual'],
+        ['bm25', 'BM25'],
+        ['lexical', 'Lex']
+    ];
+    const rows = fields.map(([key, label]) => {
+        const raw = Number(scores[key]);
+        if (!Number.isFinite(raw)) return '';
+        const value = Math.max(0, Math.min(raw, 1));
+        if (value <= 0.001) return '';
+        return `<span class="modality-chip" title="${label}: ${raw.toFixed(3)}"><b>${label}</b>${Math.round(value * 100)}</span>`;
+    }).filter(Boolean).join('');
+    return rows ? `<div class="modality-bars">${rows}</div>` : '';
+}
+
 function renderCard(item, idx) {
     const card = document.createElement('div'); card.className = 'emoji-card';
     card.style.animationDelay = `${idx * 25}ms`; card.dataset.char = item.char;
@@ -237,12 +297,17 @@ function renderCard(item, idx) {
     card.setAttribute('tabindex', '0');
     card.setAttribute('aria-label', `${item.char} ${item.en}${item.zh ? `，${item.zh}` : ''}，点击复制`);
     const confidence = Math.max(0, Math.min(Number(item.score) || 0, 1));
+    const categoryLabel = item.semantic_category || item.category || '';
+    const categoryTitle = item.semantic_category && item.category
+        ? `语义分类：${item.semantic_category}；Unicode 分类：${item.category}`
+        : categoryLabel;
     card.innerHTML = `
         <div class="card-rank">#${idx + 1}</div>
         <div class="card-char">${item.char}</div>
         <div class="card-en">${escHtml(item.en)}</div>
         <div class="card-zh">${escHtml(item.zh || '')}</div>
-        <div class="card-cat">${escHtml(item.category || '')}</div>
+        <div class="card-cat" title="${escHtml(categoryTitle)}">${escHtml(categoryLabel)}</div>
+        ${renderModalityBars(item.modality_scores)}
         <div class="card-score">${(confidence * 100).toFixed(1)}%</div>
         <div class="card-actions">
             <button class="card-btn like-btn" title="标为相关 (Rocchio PRF)" aria-label="标为相关">👍</button>
@@ -293,6 +358,80 @@ function renderCard(item, idx) {
     return card;
 }
 
+function renderCompareHit(item, idx) {
+    const score = Number(item.score);
+    const scoreText = Number.isFinite(score) ? Math.max(0, Math.min(score, 1)).toFixed(2) : '--';
+    return `
+        <li class="mm-hit">
+            <span class="mm-rank">${idx + 1}</span>
+            <span class="mm-char">${item.char}</span>
+            <span class="mm-name">${escHtml(item.en)}</span>
+            <span class="mm-score">${scoreText}</span>
+        </li>
+    `;
+}
+
+function getMultimodalCompareKey(query) {
+    const category = categorySelect ? categorySelect.value : 'all';
+    return JSON.stringify({ query, category });
+}
+
+async function renderMultimodalComparison(query) {
+    if (!mmCompare || !visualIndexReady || isVecMode) {
+        if (mmCompare) mmCompare.style.display = 'none';
+        return;
+    }
+    const cacheKey = getMultimodalCompareKey(query);
+    if (mmCompareCache.key === cacheKey && mmCompareCache.html) {
+        mmCompare.innerHTML = mmCompareCache.html;
+        mmCompare.style.display = 'block';
+        return;
+    }
+    mmCompare.style.display = 'block';
+    mmCompare.innerHTML = `
+        <div class="mm-compare-head">
+            <span>多模态解释</span>
+            <small>Text-only / Visual-only / MM-Hybrid Top-5</small>
+        </div>
+        <div class="mm-compare-loading">对比计算中...</div>
+    `;
+    try {
+        const resp = await fetch('/api/multimodal_compare', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                query,
+                top_k: 5,
+                category: categorySelect ? categorySelect.value : 'all'
+            })
+        });
+        const data = await resp.json();
+        if (getMultimodalCompareKey(query) !== cacheKey) return;
+        if (!resp.ok) {
+            mmCompare.style.display = 'none';
+            return;
+        }
+        const columns = (data.columns || []).map(col => `
+            <div class="mm-column">
+                <div class="mm-column-title">${escHtml(col.label)}</div>
+                <ol class="mm-list">
+                    ${(col.results || []).map(renderCompareHit).join('')}
+                </ol>
+            </div>
+        `).join('');
+        mmCompare.innerHTML = `
+            <div class="mm-compare-head">
+                <span>多模态解释</span>
+                <small>Text-only / Visual-only / MM-Hybrid Top-5</small>
+            </div>
+            <div class="mm-columns">${columns}</div>
+        `;
+        mmCompareCache = { key: cacheKey, html: mmCompare.innerHTML };
+    } catch(e) {
+        mmCompare.style.display = 'none';
+    }
+}
+
 function updateExcludeBadge() {
     let totalFeedback = excludeSet.size + likedSet.size;
     if (totalFeedback > 0) { 
@@ -307,12 +446,15 @@ clearExclude.onclick = () => { excludeSet.clear(); likedSet.clear(); updateExclu
 async function doSearch() {
     const query = queryInput.value.trim(); if (!query) return;
     if (_abortCtrl) _abortCtrl.abort();
-    _abortCtrl = new AbortController(); uiLoading(); lastQuery = query;
+    const compareKey = getMultimodalCompareKey(query);
+    const keepMultimodal = mmCompareCache.key === compareKey && !!mmCompareCache.html && visualIndexReady && !isVecMode;
+    _abortCtrl = new AbortController(); uiLoading({ keepMultimodal }); lastQuery = query;
     try {
         const resp = await fetch('/api/search', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ query, method: currentMethod, top_k: parseInt(topkSelect.value), category: categorySelect ? categorySelect.value : 'all', debug: debugToggle ? debugToggle.checked : false, exclude: [...excludeSet], liked: [...likedSet] }), signal: _abortCtrl.signal });
         const data = await resp.json(); uiDone();
         if (!resp.ok) { showError(data.error); return; }
         pushHistory(query); renderResults(data.results, query, data.sim_matrix);
+        renderMultimodalComparison(query);
         renderDebug(data.debug);
         if (methodBadge) methodBadge.textContent = (data.method || currentMethod).toUpperCase();
         statusText.textContent = `找到 ${data.count} 个 · ${data.elapsed}ms`; statusBar.style.display = 'flex';
@@ -328,6 +470,7 @@ async function doVecMath() {
         const data = await resp.json(); uiDone();
         if (!resp.ok) { showError(data.error); return; }
         renderResults(data.results, expr, data.sim_matrix);
+        if (mmCompare) mmCompare.style.display = 'none';
         statusBar.style.display = 'flex';
     } catch (e) { if(e.name!=='AbortError') { uiDone(); showError(e.message); } }
 }
@@ -355,7 +498,15 @@ function renderResults(results, query, sim_matrix) {
     }
 }
 
-function uiLoading() { emptyState.style.display='none'; statusBar.style.display='none'; resultsGrid.innerHTML=''; spinner.style.display='flex'; starSection.style.display='none'; renderDebug(null); }
+function uiLoading(options = {}) {
+    emptyState.style.display='none';
+    statusBar.style.display='none';
+    resultsGrid.innerHTML='';
+    spinner.style.display='flex';
+    starSection.style.display='none';
+    if(mmCompare && !options.keepMultimodal) mmCompare.style.display='none';
+    renderDebug(null);
+}
 function uiDone() { spinner.style.display='none'; }
 function showError(m) { statusText.textContent=`⚠ ${m}`; statusBar.style.display='flex'; showToast(m); }
 function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -554,7 +705,7 @@ runEvalBtn.onclick = () => {
     if(evalChartObj) evalChartObj.destroy();
     if(window.evalRadarObj) window.evalRadarObj.destroy();
 
-    const icons = { 'bm25': 'BM', 'tfidf': 'TF', 'dense': 'DE', 'bi_encoder': 'BE', 'hnsw': 'HS', 'rerank': 'RR', 'hybrid': 'HY' };
+    const icons = { 'bm25': 'BM', 'tfidf': 'TF', 'dense': 'DE', 'bi_encoder': 'BE', 'hnsw': 'HS', 'rerank': 'RR', 'hybrid': 'HY', 'visual': 'VI', 'mm_hybrid': 'MM' };
     const lanesWrap = document.getElementById('arena-lanes');
     const statusText = document.getElementById('arena-status');
     const queryDisplay = document.getElementById('arena-current-query');
