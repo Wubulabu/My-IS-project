@@ -31,6 +31,42 @@ def canonical_char(char: str) -> str:
     return char.replace("\ufe0f", "").replace("\ufe0e", "")
 
 
+MM_HYBRID_WEIGHT_KEYS = ("semantic", "visual", "bm25", "lexical", "rank_bonus")
+MM_HYBRID_DEFAULT_WEIGHTS = {
+    "semantic": 0.50,
+    "visual": 0.25,
+    "bm25": 0.15,
+    "lexical": 0.10,
+    "rank_bonus": 0.00,
+}
+MM_HYBRID_VARIANT_WEIGHTS = {
+    "without_visual": {
+        "semantic": 0.60,
+        "visual": 0.0,
+        "bm25": 0.30,
+        "lexical": 0.07,
+        "rank_bonus": 0.03,
+    },
+    "without_lexical": {
+        "semantic": 0.54,
+        "visual": 0.23,
+        "bm25": 0.20,
+        "lexical": 0.0,
+        "rank_bonus": 0.03,
+    },
+}
+
+
+def normalize_mm_hybrid_weights(weights: dict[str, float] | None) -> dict[str, float]:
+    """Return non-negative fusion weights normalized to sum to one."""
+    source = weights or MM_HYBRID_DEFAULT_WEIGHTS
+    cleaned = {key: max(float(source.get(key, 0.0)), 0.0) for key in MM_HYBRID_WEIGHT_KEYS}
+    total = sum(cleaned.values())
+    if total <= 1e-12:
+        return MM_HYBRID_DEFAULT_WEIGHTS.copy()
+    return {key: cleaned[key] / total for key in MM_HYBRID_WEIGHT_KEYS}
+
+
 class EmojiSearchEngine:
     """
     Facade over five retrieval methods.
@@ -53,7 +89,11 @@ class EmojiSearchEngine:
     }
     SPECIAL_METHODS = {"rerank", "hybrid", "mm_hybrid", "mm_hybrid_no_visual", "mm_hybrid_no_lexical"}
 
-    def __init__(self, use_neural_reranker: bool = True):
+    def __init__(
+        self,
+        use_neural_reranker: bool = True,
+        mm_hybrid_weights: dict[str, float] | None = None,
+    ):
         """
         Initialize search engine.
         
@@ -66,6 +106,16 @@ class EmojiSearchEngine:
         self._retrievers: dict = {}
         self._reranker = NeuralReranker() if use_neural_reranker else LexicalBoostReranker()
         self._use_neural_reranker = use_neural_reranker
+        self._mm_hybrid_weights = normalize_mm_hybrid_weights(mm_hybrid_weights)
+
+    def set_mm_hybrid_weights(self, weights: dict[str, float]):
+        self._mm_hybrid_weights = normalize_mm_hybrid_weights(weights)
+        return self
+
+    def _mm_hybrid_weights_for_variant(self, variant: str) -> dict[str, float]:
+        if variant == "full":
+            return self._mm_hybrid_weights.copy()
+        return normalize_mm_hybrid_weights(MM_HYBRID_VARIANT_WEIGHTS.get(variant))
 
     # ── loading ───────────────────────────────────────────────────────────────
     def load(self, methods: list[str] | None = None):
@@ -257,17 +307,7 @@ class EmojiSearchEngine:
         semantic_norm = normalize(semantic_scores)
         visual_norm = normalize(visual_scores)
 
-        weights = {
-            "semantic": 0.50,
-            "visual": 0.20,
-            "bm25": 0.20,
-            "lexical": 0.07,
-            "rank_bonus": 0.03,
-        }
-        if variant == "without_visual":
-            weights.update({"semantic": 0.60, "visual": 0.0, "bm25": 0.30, "lexical": 0.07, "rank_bonus": 0.03})
-        elif variant == "without_lexical":
-            weights.update({"semantic": 0.54, "visual": 0.23, "bm25": 0.20, "lexical": 0.0, "rank_bonus": 0.03})
+        weights = self._mm_hybrid_weights_for_variant(variant)
 
         fused = []
         for key, hit in candidates.items():

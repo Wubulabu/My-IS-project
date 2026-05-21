@@ -62,6 +62,7 @@ let likedSet      = new Set();
 let lastResults   = [];
 let lastQuery     = '';
 let _abortCtrl    = null;
+let _feedbackRefreshTimer = null;
 let evalChartObj  = null;
 let evalRadarObj  = null;
 let systemStatus   = null;
@@ -69,6 +70,7 @@ let visualIndexReady = true;
 let mmCompareCache = { key: '', html: '' };
 
 const VISUAL_METHODS = new Set(['visual', 'mm_hybrid']);
+const EVAL_SAMPLE_SIZE = 100;
 
 // ── toast ────────────────────────────────────────────────────────────────
 let _toastTimer;
@@ -77,6 +79,11 @@ function showToast(msg, dur = 2500) {
     toast.classList.add('show');
     clearTimeout(_toastTimer);
     _toastTimer = setTimeout(() => toast.classList.remove('show'), dur);
+}
+
+function compactText(value, maxChars = 120) {
+    const text = String(value || '').replace(/\s+/g, ' ').trim();
+    return text.length > maxChars ? `${text.slice(0, maxChars).replace(/[，、；：,.。！？!? ]+$/, '')}。` : text;
 }
 
 // ── history ──────────────────────────────────────────────────────────────
@@ -200,9 +207,62 @@ vecMathBtn.addEventListener('click', () => setVecMode(!isVecMode));
 document.querySelectorAll('.vec-ex-tag').forEach(tag => { tag.addEventListener('click', () => { queryInput.value = tag.dataset.expr; doVecMath(); }); });
 
 // ── triggers ─────────────────────────────────────────────────────────────
+// Expanded query pools: pure English, pure Chinese, and some bilingual pairs.
+const englishQueries = [
+    'coffee','space','detective','rain','fire','fox','cat','dog','happy','music',
+    'sun','moon','love','work','sleep','tree','ocean','book','computer','food',
+    'mountain','river','city','sky','garden','flower','art','travel','movie','dessert'
+];
+const chineseQueries = [
+    '咖啡','太空','侦探','下雨','火','狐狸','猫','狗','开心','音乐',
+    '太阳','月亮','爱心','工作','睡觉','树木','海洋','书本','电脑','食物',
+    '山脉','河流','城市','天空','花园','花朵','艺术','旅行','电影','甜点'
+];
+const bilingualPairs = [
+    'coffee 咖啡','space 太空','detective 侦探','rain 下雨','fire 火','fox 狐狸',
+    'cat 猫','dog 狗','happy 开心','music 音乐','sun 太阳','moon 月亮',
+    'love 爱心','work 工作','sleep 睡觉','tree 树木','ocean 海洋','book 书本',
+    'computer 电脑','food 食物'
+];
+let randomPool = [];
+let lastRandomQuery = '';
+
+function getNextRandomQuery() {
+    if (randomPool.length === 0) {
+        // Choose mode: roughly equal thirds -> English only, Chinese only, or mixed
+        const r = Math.random();
+        let pool = [];
+        if (r < 0.33) {
+            pool = [...englishQueries];
+        } else if (r < 0.66) {
+            pool = [...chineseQueries];
+        } else {
+            // combine both languages and some bilingual pairs for variety
+            pool = [...englishQueries, ...chineseQueries, ...bilingualPairs];
+        }
+
+        // optional debug logging
+        try { if (window && window.RANDOM_QUERY_DEBUG) console.debug('[getNextRandomQuery] mode r=', r, 'poolSize=', pool.length); } catch(e) {}
+
+        // shuffle
+        for (let i = pool.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+
+        // avoid repeating the very last shown query when possible
+        if (pool[pool.length - 1] === lastRandomQuery && pool.length > 1) {
+            [pool[pool.length - 1], pool[0]] = [pool[0], pool[pool.length - 1]];
+        }
+        randomPool = pool;
+    }
+    lastRandomQuery = randomPool.pop();
+    return lastRandomQuery;
+}
+
 searchBtn.addEventListener('click', () => isVecMode ? doVecMath() : doSearch());
 queryInput.addEventListener('keydown', e => { if (e.key === 'Enter') isVecMode ? doVecMath() : doSearch(); });
-randomBtn.addEventListener('click', () => { queryInput.value = ['coffee', 'space', 'detective', 'rain', 'fire', 'fox'][Math.floor(Math.random()*6)]; if(isVecMode)setVecMode(false); doSearch(); });
+randomBtn.addEventListener('click', () => { queryInput.value = getNextRandomQuery(); if(isVecMode)setVecMode(false); doSearch(); });
 document.querySelectorAll('.example-tag').forEach(tag => { tag.addEventListener('click', () => { queryInput.value = tag.dataset.q; if(isVecMode)setVecMode(false); doSearch(); }); });
 
 // ── similar ──────────────────────────────────────────────────────────────
@@ -296,6 +356,10 @@ function renderCard(item, idx) {
     card.setAttribute('role', 'listitem');
     card.setAttribute('tabindex', '0');
     card.setAttribute('aria-label', `${item.char} ${item.en}${item.zh ? `，${item.zh}` : ''}，点击复制`);
+    const isLiked = likedSet.has(item.char);
+    const isExcluded = excludeSet.has(item.char);
+    if (isLiked) card.classList.add('feedback-liked');
+    if (isExcluded) card.classList.add('feedback-excluded');
     const confidence = Math.max(0, Math.min(Number(item.score) || 0, 1));
     const categoryLabel = item.semantic_category || item.category || '';
     const categoryTitle = item.semantic_category && item.category
@@ -310,9 +374,9 @@ function renderCard(item, idx) {
         ${renderModalityBars(item.modality_scores)}
         <div class="card-score">${(confidence * 100).toFixed(1)}%</div>
         <div class="card-actions">
-            <button class="card-btn like-btn" title="标为相关 (Rocchio PRF)" aria-label="标为相关">👍</button>
+            <button class="card-btn like-btn${isLiked ? ' active' : ''}" title="标为相关 (Rocchio PRF)" aria-label="标为相关" aria-pressed="${isLiked ? 'true' : 'false'}">👍</button>
             <button class="card-btn explore-btn" title="查看语义相近" aria-label="查看语义相近">🔗</button>
-            <button class="card-btn dislike-btn" title="去除此项" aria-label="去除此项">✕</button>
+            <button class="card-btn dislike-btn${isExcluded ? ' active' : ''}" title="去除此项" aria-label="去除此项" aria-pressed="${isExcluded ? 'true' : 'false'}">✕</button>
         </div>
         <div class="card-confidence" style="width: ${confidence * 100}%"></div>
     `;
@@ -337,17 +401,55 @@ function renderCard(item, idx) {
     const likeBtn = card.querySelector('.like-btn');
     if (likeBtn) likeBtn.onclick = e => { 
         e.stopPropagation(); 
-        if (likedSet.has(item.char)) likedSet.delete(item.char);
-        else { likedSet.add(item.char); excludeSet.delete(item.char); }
-        updateExcludeBadge(); isVecMode ? doVecMath() : doSearch(); 
+        let message;
+        if (likedSet.has(item.char)) {
+            likedSet.delete(item.char);
+            card.classList.remove('feedback-liked');
+            likeBtn.classList.remove('active');
+            likeBtn.setAttribute('aria-pressed', 'false');
+            message = `已取消相关标记：${item.char}`;
+        } else {
+            likedSet.add(item.char); excludeSet.delete(item.char);
+            card.classList.add('feedback-liked');
+            card.classList.remove('feedback-excluded');
+            likeBtn.classList.add('active');
+            likeBtn.setAttribute('aria-pressed', 'true');
+            if (dislikeBtn) {
+                dislikeBtn.classList.remove('active');
+                dislikeBtn.setAttribute('aria-pressed', 'false');
+            }
+            message = `已标为相关：${item.char}，正在重排`;
+        }
+        updateExcludeBadge();
+        showToast(message);
+        queueFeedbackRefresh();
     };
     
     const dislikeBtn = card.querySelector('.dislike-btn');
     if (dislikeBtn) dislikeBtn.onclick = e => { 
         e.stopPropagation(); 
-        if (excludeSet.has(item.char)) excludeSet.delete(item.char);
-        else { excludeSet.add(item.char); likedSet.delete(item.char); }
-        updateExcludeBadge(); isVecMode ? doVecMath() : doSearch(); 
+        let message;
+        if (excludeSet.has(item.char)) {
+            excludeSet.delete(item.char);
+            card.classList.remove('feedback-excluded');
+            dislikeBtn.classList.remove('active');
+            dislikeBtn.setAttribute('aria-pressed', 'false');
+            message = `已恢复：${item.char}`;
+        } else {
+            excludeSet.add(item.char); likedSet.delete(item.char);
+            card.classList.add('feedback-excluded');
+            card.classList.remove('feedback-liked');
+            dislikeBtn.classList.add('active');
+            dislikeBtn.setAttribute('aria-pressed', 'true');
+            if (likeBtn) {
+                likeBtn.classList.remove('active');
+                likeBtn.setAttribute('aria-pressed', 'false');
+            }
+            message = `已排除：${item.char}，正在重排`;
+        }
+        updateExcludeBadge();
+        showToast(message);
+        queueFeedbackRefresh();
     };
     
     const exploreBtn = card.querySelector('.explore-btn');
@@ -433,14 +535,29 @@ async function renderMultimodalComparison(query) {
 }
 
 function updateExcludeBadge() {
+    if (!excludeBadge || !excludeCount) return;
     let totalFeedback = excludeSet.size + likedSet.size;
     if (totalFeedback > 0) { 
-        excludeCount.textContent = `${likedSet.size}👍 ${excludeSet.size}✕`; 
+        excludeCount.textContent = `相关 ${likedSet.size} · 排除 ${excludeSet.size}`;
         excludeBadge.style.display = 'inline-flex'; 
     }
     else { excludeBadge.style.display = 'none'; }
 }
-clearExclude.onclick = () => { excludeSet.clear(); likedSet.clear(); updateExcludeBadge(); if(lastQuery) isVecMode ? doVecMath() : doSearch(); };
+function queueFeedbackRefresh() {
+    clearTimeout(_feedbackRefreshTimer);
+    _feedbackRefreshTimer = setTimeout(() => {
+        if (queryInput.value.trim()) isVecMode ? doVecMath() : doSearch();
+    }, 120);
+}
+if (clearExclude) {
+    clearExclude.onclick = () => {
+        excludeSet.clear();
+        likedSet.clear();
+        updateExcludeBadge();
+        showToast('已清空反馈标记');
+        if(lastQuery) queueFeedbackRefresh();
+    };
+}
 
 // ── API logic ────────────────────────────────────────────────────────────
 async function doSearch() {
@@ -466,7 +583,7 @@ async function doVecMath() {
     if (_abortCtrl) _abortCtrl.abort();
     _abortCtrl = new AbortController(); uiLoading();
     try {
-        const resp = await fetch('/api/vector_math', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ expression: expr, top_k: parseInt(topkSelect.value), exclude: [...excludeSet] }), signal: _abortCtrl.signal });
+        const resp = await fetch('/api/vector_math', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ expression: expr, top_k: parseInt(topkSelect.value), exclude: [...excludeSet], liked: [...likedSet] }), signal: _abortCtrl.signal });
         const data = await resp.json(); uiDone();
         if (!resp.ok) { showError(data.error); return; }
         renderResults(data.results, expr, data.sim_matrix);
@@ -714,7 +831,8 @@ runEvalBtn.onclick = () => {
     queryDisplay.textContent = '正在连接评测流...';
     
     let totalQ = 0;
-    const es = new EventSource('/api/eval');
+    let raceSeed = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const es = new EventSource(`/api/eval?seed=${encodeURIComponent(raceSeed)}&sample_size=${EVAL_SAMPLE_SIZE}`);
     es.onopen = () => {
         queryDisplay.textContent = '评测流已连接，等待初始化...';
     };
@@ -724,8 +842,14 @@ runEvalBtn.onclick = () => {
             const data = JSON.parse(e.data);
             if (data.type === 'init') {
                 totalQ = data.total_queries;
+                raceSeed = data.race_seed || raceSeed;
+                const breakdown = data.sample_breakdown || {};
+                const breakdownText = Object.keys(breakdown).length
+                    ? `; mm ${breakdown.multimodal || 0}, core ${breakdown.core || 0}, expanded ${breakdown.expanded || 0}`
+                    : '';
+                statusText.title = `Race seed: ${raceSeed}; ${data.order || 'sample'}; sample ${data.sample_size || totalQ}/${data.total_pool || totalQ}${breakdownText}`;
                 statusText.textContent = `( 0 / ${totalQ} )`;
-                queryDisplay.textContent = '发令枪已注入，正在预热第一条查询...';
+                queryDisplay.textContent = `Balanced sample ${data.sample_size || totalQ}/${data.total_pool || totalQ}${breakdownText}. Warming up first query...`;
                 data.methods.forEach(m => {
                     lanesWrap.innerHTML += `
                         <div class="lane" id="lane-${m}">
@@ -755,15 +879,22 @@ runEvalBtn.onclick = () => {
 
                 // Move cars
                 const pct = Math.floor(((data.query_idx + 1) / totalQ) * 100);
-                Object.keys(data.updates).forEach(m => {
+                const methodNames = Object.keys(data.updates);
+                const maxMap = Math.max(...methodNames.map(m => Number(data.updates[m].metrics.MAP) || 0), 0.0001);
+                methodNames.forEach(m => {
                     const update = data.updates[m];
+                    const mapScore = Number(update.metrics.MAP) || 0;
+                    const relativeScore = maxMap > 0 ? mapScore / maxMap : 0;
+                    const lanePct = Math.min(100, Math.max(4, pct * (0.25 + 0.75 * relativeScore)));
                     const car = document.getElementById(`car-${m}`);
+                    const lane = document.getElementById(`lane-${m}`);
                     const score = document.getElementById(`score-${m}`);
                     const emojiNode = document.getElementById(`emoji-${m}`);
                     if(car) {
-                        car.style.width = `${pct}%`;
-                        score.textContent = (update.metrics.MAP || 0).toFixed(3);
-                        emojiNode.textContent = update.top_hit || '🏎️';
+                        car.style.width = `${lanePct.toFixed(1)}%`;
+                        if (lane) lane.classList.toggle('lane-leader', relativeScore >= 0.999 && mapScore > 0);
+                        if (score) score.textContent = mapScore.toFixed(3);
+                        if (emojiNode) emojiNode.textContent = update.top_hit || '🏎️';
                     }
                 });
 
@@ -871,7 +1002,7 @@ function renderEvalResults(data) {
     evalResults.style.display = 'block';
     
     // Phase 9: Global AI Committee Evaluation
-    runAiCommittee(data.results, data.sample_query); 
+    runAiCommittee(data.results, data.sample_query, data.race_seed);
     
     runEvalBtn.disabled = false; runEvalBtn.textContent = '重新评测 ✦';
 }
@@ -890,18 +1021,18 @@ function renderFailureCases(cases) {
             const rank = s.first_rank || '-';
             return `${m}: hit=${s.hits_at_10}, first=${rank}`;
         }).join(' | ');
-        return `<tr><td>${escHtml(item.id)}</td><td>${escHtml(item.query)}</td><td>${item.relevant_count}</td><td>${escHtml(methodText)}</td></tr>`;
+        return `<tr><td>${escHtml(item.id)}</td><td>${escHtml(item.bucket || '-')}</td><td>${escHtml(item.query)}</td><td>${item.relevant_count}</td><td>${escHtml(item.target_method || 'mm_hybrid')}</td><td>${escHtml(methodText)}</td></tr>`;
     }).join('');
     wrap.innerHTML = `
         <h4>失败案例分析 (Failure Analysis)</h4>
         <table class="eval-table failure-table">
-            <thead><tr><th>编号</th><th>查询</th><th>相关数</th><th>各方法诊断</th></tr></thead>
+            <thead><tr><th>ID</th><th>Bucket</th><th>Query</th><th>Relevant</th><th>Focus</th><th>Methods</th></tr></thead>
             <tbody>${rows}</tbody>
         </table>
     `;
 }
 
-async function runAiCommittee(results, query) {
+async function runAiCommittee(results, query, raceSeed) {
     const box = document.getElementById('ai-jury-results');
     const loadingWrap = document.getElementById('jury-loading');
     const contentWrap = document.getElementById('jury-verdict-content');
@@ -916,7 +1047,7 @@ async function runAiCommittee(results, query) {
         const resp = await fetch('/api/ai_committee_eval', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ metrics: results, query })
+            body: JSON.stringify({ metrics: results, query, race_seed: raceSeed })
         });
         const data = await resp.json();
 
@@ -926,12 +1057,14 @@ async function runAiCommittee(results, query) {
         if (data.verdict && typeof data.verdict === 'object' && !data.verdict.error) {
             const v = data.verdict;
             const mvp = v.mvp || {};
-            const score = parseFloat(mvp.score || 0);
+            const score = Number(mvp.score);
+            const safeScore = Number.isFinite(score) ? score : 0;
 
             // Determine status class based on score
             let statusClass = 'status-neutral';
-            if (score > 0.7) statusClass = 'status-success';
-            else if (score < 0.35) statusClass = 'status-warning';
+            if (safeScore > 0.7) statusClass = 'status-success';
+            else if (safeScore < 0.35) statusClass = 'status-warning';
+            const diagnostics = Array.isArray(v.diagnostics) ? v.diagnostics.slice(0, 3) : [];
 
             let html = `
                 <div class="consensus-top-row">
@@ -940,10 +1073,10 @@ async function runAiCommittee(results, query) {
                       <div class="qpc-body mvp-body">
                         <div class="qpc-val mvp-name">
                             ${escHtml(mvp.name || '--')} 
-                            <span class="mvp-score-pill">MAP: ${score.toFixed(3)}</span>
+                            <span class="mvp-score-pill">MAP: ${safeScore.toFixed(3)}</span>
                         </div>
                         <div class="qpc-reason">
-                            " ${escHtml(mvp.reason || '--')} "
+                            " ${escHtml(compactText(mvp.reason || '--', 90))} "
                         </div>
                       </div>
                     </div>
@@ -951,15 +1084,15 @@ async function runAiCommittee(results, query) {
                 <div class="jury-verdict jury-verdict-list">
             `;
 
-            if (v.diagnostics && Array.isArray(v.diagnostics)) {
-                v.diagnostics.forEach(diag => {
+            if (diagnostics.length) {
+                diagnostics.forEach(diag => {
                     html += `
                         <div class="jury-card jury-card-wide">
                             <div class="jury-persona jury-persona-title">
-                                ${escHtml(diag.title)}
+                                ${escHtml(compactText(diag.title, 24))}
                             </div>
                             <div class="jury-opinion jury-opinion-copy">
-                                ${escHtml(diag.content)}
+                                ${escHtml(compactText(diag.content, 120))}
                             </div>
                         </div>
                     `;

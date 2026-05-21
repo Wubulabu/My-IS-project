@@ -88,5 +88,203 @@
     "query": "moon night crescent",
     "lang": "en",
     "relevant": ["🌙", "🌛", "🌜", "🌚", "🌝", "🌘", "🌗", "🌖", "🌕"]
+  },
+  {
+    "id": "mm16",
+    "query": "purple heart color",
+    "lang": "en",
+    "relevant": ["💜"]
+  },
+  {
+    "id": "mm17",
+    "query": "black heart dark color",
+    "lang": "en",
+    "relevant": ["🖤"]
+  },
+  {
+    "id": "mm18",
+    "query": "white heart light color",
+    "lang": "en",
+    "relevant": ["🤍"]
+  },
+  {
+    "id": "mm19",
+    "query": "brown heart color",
+    "lang": "en",
+    "relevant": ["🤎"]
+  },
+  {
+    "id": "mm20",
+    "query": "red square block shape",
+    "lang": "en",
+    "relevant": ["🟥", "🔴", "🔺", "🔻"]
+  },
+  {
+    "id": "mm21",
+    "query": "blue square diamond shape",
+    "lang": "en",
+    "relevant": ["🟦", "🔷", "🔹"]
+  },
+  {
+    "id": "mm22",
+    "query": "green circle round shape",
+    "lang": "en",
+    "relevant": ["🟢", "✅"]
+  },
+  {
+    "id": "mm23",
+    "query": "yellow star sparkle",
+    "lang": "en",
+    "relevant": ["⭐", "🌟", "✨", "💫"]
+  },
+  {
+    "id": "mm24",
+    "query": "fire flame hot",
+    "lang": "en",
+    "relevant": ["🔥", "❤️‍🔥"]
+  },
+  {
+    "id": "mm25",
+    "query": "snowflake cold winter",
+    "lang": "en",
+    "relevant": ["❄️", "☃️", "⛄"]
+  },
+  {
+    "id": "mm26",
+    "query": "sun bright yellow",
+    "lang": "en",
+    "relevant": ["☀️", "🌞", "🌅", "🌄"]
+  },
+  {
+    "id": "mm27",
+    "query": "cloud gray weather",
+    "lang": "en",
+    "relevant": ["☁️", "🌥️", "⛅", "🌦️"]
+  },
+  {
+    "id": "mm28",
+    "query": "soccer ball sports",
+    "lang": "en",
+    "relevant": ["⚽"]
+  },
+  {
+    "id": "mm29",
+    "query": "basketball orange ball",
+    "lang": "en",
+    "relevant": ["🏀"]
+  },
+  {
+    "id": "mm30",
+    "query": "gift box present",
+    "lang": "en",
+    "relevant": ["🎁", "🎀"]
+  },
+  {
+    "id": "mm31",
+    "query": "music note symbol",
+    "lang": "en",
+    "relevant": ["🎵", "🎶", "🎼"]
+  },
+  {
+    "id": "mm32",
+    "query": "camera photo",
+    "lang": "en",
+    "relevant": ["📷", "📸", "🎥", "📹"]
+  },
+  {
+    "id": "mm33",
+    "query": "laptop computer screen",
+    "lang": "en",
+    "relevant": ["💻", "🖥️", "⌨️"]
+  },
+  {
+    "id": "mm34",
+    "query": "lock key security",
+    "lang": "en",
+    "relevant": ["🔒", "🔐", "🔑", "🗝️"]
+  },
+  {
+    "id": "mm35",
+    "query": "check mark green",
+    "lang": "en",
+    "relevant": ["✅", "✔️", "☑️"]
+  },
+  {
+    "id": "mm36",
+    "query": "cross mark red",
+    "lang": "en",
+    "relevant": ["❌", "❎", "✖️"]
+  },
+  {
+    "id": "mm37",
+    "query": "up arrow sign",
+    "lang": "en",
+    "relevant": ["⬆️", "⏫", "🔼", "↗️"]
+  },
+  {
+    "id": "mm38",
+    "query": "down arrow sign",
+    "lang": "en",
+    "relevant": ["⬇️", "⏬", "🔽", "↘️"]
+  },
+  {
+    "id": "mm39",
+    "query": "clock time round",
+    "lang": "en",
+    "relevant": ["🕐", "🕑", "🕒", "🕓", "⌚"]
+  },
+  {
+    "id": "mm40",
+    "query": "flower blossom pink",
+    "lang": "en",
+    "relevant": ["🌸", "🌺", "🌷", "🌹", "💐"]
+  },
+  {
+    "id": "mm41",
+    "query": "红色爱心",
+    "lang": "zh",
+    "relevant": ["❤️", "♥️", "💖", "💘", "💝", "💗", "💓", "💞", "💕"]
+  },
+  {
+    "id": "mm42",
+    "query": "蓝色方块",
+    "lang": "zh",
+    "relevant": ["🟦", "🔷", "🔹"]
+  },
+  {
+    "id": "mm43",
+    "query": "黄色笑脸",
+    "lang": "zh",
+    "relevant": ["😀", "😃", "😄", "😁", "😊", "🙂", "☺️"]
+  },
+  {
+    "id": "mm44",
+    "query": "猫脸表情",
+    "lang": "zh",
+    "relevant": ["😺", "😸", "😹", "😻", "😼", "😽", "🙀", "😿", "😾"]
+  },
+  {
+    "id": "mm45",
+    "query": "雨伞天气",
+    "lang": "zh",
+    "relevant": ["☔", "🌂", "🌧️", "⛈️", "🌦️"]
+  },
+  {
+    "id": "mm46",
+    "query": "月亮夜晚",
+    "lang": "zh",
+    "relevant": ["🌙", "🌛", "🌜", "🌚", "🌝", "🌘", "🌗", "🌖", "🌕"]
+  },
+  {
+    "id": "mm47",
+    "query": "皇冠金色",
+    "lang": "zh",
+    "relevant": ["👑", "🤴", "👸"]
+  },
+  {
+    "id": "mm48",
+    "query": "警告三角",
+    "lang": "zh",
+    "relevant": ["⚠️", "🚸", "🔺", "🔻"]
   }
 ]

@@ -20,6 +20,14 @@ from tabulate import tabulate
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from search_engine import EmojiSearchEngine
 from eval.metrics  import evaluate_all
+from eval.sampling import (
+    MULTIMODAL_QUERY_FILE,
+    bucket_counts,
+    flatten_pools,
+    load_evaluation_pools,
+    pool_size,
+    stratified_eval_sample,
+)
 
 DATA_DIR   = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 QUERIES_F  = os.path.join(DATA_DIR, "eval_queries.json")
@@ -109,6 +117,17 @@ def main():
                         help="Stop immediately if any method fails")
     parser.add_argument("--queries", default=QUERIES_F,
                         help="Evaluation query JSON file")
+    parser.add_argument("--multimodal-queries",
+                        default=os.path.join(os.path.dirname(os.path.dirname(__file__)), MULTIMODAL_QUERY_FILE),
+                        help="Multimodal query JSON file used with --balanced")
+    parser.add_argument("--balanced", action="store_true",
+                        help="Use the same stratified core/multimodal/expanded sample profile as /api/eval")
+    parser.add_argument("--sample-size", default="100",
+                        help="Balanced sample size, or all/full")
+    parser.add_argument("--seed", default="offline-eval",
+                        help="Deterministic seed for --balanced sampling")
+    parser.add_argument("--neural-rerank", action="store_true",
+                        help="Use the optional remote neural reranker instead of the app's local reranker")
     args = parser.parse_args()
 
     ks = [5, 10]
@@ -125,11 +144,31 @@ def main():
 
     # ── load ─────────────────────────────────────────────────────────────────
     print("\n[1/3] Loading search engine …")
-    engine = EmojiSearchEngine()
+    engine = EmojiSearchEngine(use_neural_reranker=args.neural_rerank)
     engine.load(methods=methods)
 
     print("[2/3] Loading evaluation queries …")
-    queries = load_queries(args.queries)
+    if args.balanced:
+        pools = load_evaluation_pools(
+            base_query_file=args.queries,
+            multimodal_query_file=args.multimodal_queries,
+        )
+        if str(args.sample_size).strip().lower() in {"all", "full"}:
+            queries = flatten_pools(pools)
+            breakdown = bucket_counts(queries)
+        else:
+            try:
+                sample_size = int(args.sample_size)
+            except (TypeError, ValueError):
+                sample_size = 100
+            queries, breakdown = stratified_eval_sample(
+                pools,
+                sample_size=sample_size,
+                seed=args.seed,
+            )
+        print(f"  balanced sample: {len(queries)}/{pool_size(pools)} queries, breakdown={breakdown}, seed={args.seed}")
+    else:
+        queries = load_queries(args.queries)
     gt      = build_ground_truth(queries)
     print(f"  {len(queries)} queries, {sum(len(v) for v in gt.values())} total relevant items")
 

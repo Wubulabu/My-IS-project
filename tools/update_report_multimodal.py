@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import csv
+import json
 from pathlib import Path
 import shutil
+import statistics
 
 from docx import Document
 from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
 
 
@@ -14,6 +17,9 @@ REPORT = ROOT / "report.docx"
 BACKUP = ROOT / "output" / "doc" / "report_before_multimodal_update.docx"
 MM_CSV = ROOT / "output" / "eval_report_multimodal" / "comparison.csv"
 ABLATION_CSV = ROOT / "output" / "eval_report_multimodal_ablation" / "comparison.csv"
+DATASET_JSON = ROOT / "data" / "emoji_dataset.json"
+BASE_EVAL_JSON = ROOT / "data" / "eval_queries.json"
+MM_EVAL_JSON = ROOT / "data" / "eval_queries_multimodal.json"
 
 
 def set_para(paragraph, text: str) -> None:
@@ -33,7 +39,10 @@ def find_para(doc: Document, token: str) -> Paragraph:
 
 
 def replace_contains(doc: Document, token: str, text: str) -> None:
-    set_para(find_para(doc, token), text)
+    for paragraph in doc.paragraphs:
+        if token in paragraph.text:
+            set_para(paragraph, text)
+            return
 
 
 def insert_after(paragraph: Paragraph, text: str = "", style=None) -> Paragraph:
@@ -51,6 +60,10 @@ def read_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(f))
 
 
+def read_json(path: Path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def fmt(row: dict[str, str], key: str) -> str:
     return f"{float(row[key]):.4f}"
 
@@ -65,10 +78,76 @@ def normalize_method(name: str) -> str:
         "hybrid": "Hybrid",
         "visual": "Visual",
         "mm_hybrid": "MM-Hybrid",
-        "mm_hybrid_no_visual": "Without visual",
-        "mm_hybrid_no_lexical": "Without lexical",
+        "mm_hybrid_no_visual": "去除视觉分支",
+        "mm_hybrid_no_lexical": "去除词法分支",
     }
     return mapping.get(name, name)
+
+
+def query_stats(path: Path) -> dict[str, object]:
+    queries = read_json(path)
+    langs: dict[str, int] = {}
+    relevant_total = 0
+    for item in queries:
+        lang = item.get("lang", "unknown")
+        langs[lang] = langs.get(lang, 0) + 1
+        relevant_total += len(item.get("relevant", []))
+    return {
+        "count": len(queries),
+        "langs": langs,
+        "relevant_total": relevant_total,
+    }
+
+
+def lang_summary(stats: dict[str, object]) -> str:
+    langs = stats["langs"]
+    assert isinstance(langs, dict)
+    parts: list[str] = []
+    if langs.get("zh"):
+        parts.append(f"中文 {langs['zh']}")
+    if langs.get("en"):
+        parts.append(f"英文 {langs['en']}")
+    for lang, count in sorted(langs.items()):
+        if lang not in {"zh", "en"}:
+            parts.append(f"{lang} {count}")
+    return "，".join(parts)
+
+
+def dataset_stats() -> dict[str, object]:
+    records = read_json(DATASET_JSON)
+    if isinstance(records, dict):
+        records = records.get("emojis") or list(records.values())
+    keyword_lengths = [len(record.get("keywords") or []) for record in records]
+    categories: dict[str, int] = {}
+    missing_category = 0
+    for record in records:
+        category = record.get("category")
+        if not category:
+            missing_category += 1
+            category = "missing"
+        categories[category] = categories.get(category, 0) + 1
+    return {
+        "records": len(records),
+        "categories": categories,
+        "category_count": len(categories) - (1 if "missing" in categories else 0),
+        "missing_category": missing_category,
+        "keywords_avg": statistics.mean(keyword_lengths),
+        "keywords_min": min(keyword_lengths),
+        "keywords_max": max(keyword_lengths),
+    }
+
+
+def mark_fields_dirty(doc: Document) -> None:
+    settings = doc.settings.element
+    update_fields = settings.find(qn("w:updateFields"))
+    if update_fields is None:
+        update_fields = OxmlElement("w:updateFields")
+        settings.append(update_fields)
+    update_fields.set(qn("w:val"), "true")
+
+    for fld_char in doc.element.iter(qn("w:fldChar")):
+        if fld_char.get(qn("w:fldCharType")) == "begin":
+            fld_char.set(qn("w:dirty"), "true")
 
 
 def set_table(table, rows: list[list[str]]) -> None:
@@ -117,19 +196,27 @@ def main() -> None:
     ablation_rows = read_csv(ABLATION_CSV)
     mm_by_method = {row["Method"]: row for row in mm_rows}
     ab_by_method = {row["Method"]: row for row in ablation_rows}
+    base_eval = query_stats(BASE_EVAL_JSON)
+    mm_eval = query_stats(MM_EVAL_JSON)
+    corpus_stats = dataset_stats()
 
     doc = Document(str(REPORT))
 
     replace_contains(doc, "多模态对齐下的 Emoji 检索系统设计与实现", "多模态对齐下的 Emoji 检索系统设计与实现")
     replace_contains(
         doc,
-        "本课程设计面向日常通信中高频出现的表情符号检索需求",
-        "本课程设计面向日常通信中高频出现的表情符号检索需求，设计并实现了一个多模态对齐下的 Emoji 检索系统。系统不再只把 Emoji 当作文本标签，而是同时建模三类信号：用户查询、名称、关键词和多语言描述构成文本模态；Unicode 字符及 codepoint 构成符号模态；由本地字体渲染得到的 Emoji PNG 图像构成视觉模态。项目在原有 BM25、TF-IDF、Dense、Bi-Encoder、HNSW 和 Hybrid 检索基础上，新增 Visual 与 MM-Hybrid 方法，使用 openai/clip-vit-base-patch32 的 CLIP 图像编码器提取视觉向量，再通过岭回归投影到 Bi-Encoder 语义空间，使文本查询能够同时利用语义、词法和视觉外观信号。",
+        "本课程设计面向即时通信",
+        "本课程设计面向即时通信、社交媒体和内容创作中的 Emoji 检索需求，设计并实现了一个跨语言、多模态 Emoji 信息检索系统。系统将 Emoji 视为由自然语言描述、Unicode 符号属性和本地渲染图像共同构成的短文档对象，围绕数据治理、索引缓存、多路召回、融合排序、交互展示和离线评测形成完整的信息检索流程。",
     )
     replace_contains(
         doc,
-        "实验部分除 50 条中英混合查询外",
-        f"实验部分除 50 条中英混合查询外，新增 data/eval_queries_multimodal.json 中 15 条视觉区分查询。多模态补充评测显示，Visual-only 可独立完成跨模态召回（MAP={fmt(mm_by_method['visual'], 'MAP')}，NDCG@10={fmt(mm_by_method['visual'], 'NDCG@10')}），MM-Hybrid 在视觉专用集上达到 MAP={fmt(mm_by_method['mm_hybrid'], 'MAP')}、NDCG@10={fmt(mm_by_method['mm_hybrid'], 'NDCG@10')}，高于原 Hybrid 的 MAP={fmt(mm_by_method['hybrid'], 'MAP')}、NDCG@10={fmt(mm_by_method['hybrid'], 'NDCG@10')}。消融实验中去除视觉分支后 MAP 降至 {fmt(ab_by_method['mm_hybrid_no_visual'], 'MAP')}，说明视觉模态已经进入实际排序而非界面装饰。",
+        "系统在词法检索、语义检索和视觉检索之间建立统一调度机制",
+        "系统在词法检索、语义检索和视觉检索之间建立统一调度机制：BM25 与 TF-IDF 提供可解释的词面基线，Dense 与 Bi-Encoder 提供跨语言语义匹配，HNSW 展示向量检索的近似最近邻扩展路径，openai/clip-vit-base-patch32 的 CLIP 图像编码与岭回归投影使渲染 Emoji 图像能够进入文本查询驱动的排序空间。MM-Hybrid 融合语义、视觉、词法和排名信号，用于处理颜色、形状、组合图形以及网络语义等复合检索意图。",
+    )
+    replace_contains(
+        doc,
+        "实验部分构建基础评测集和视觉意图评测集",
+        f"实验部分构建基础评测集和视觉意图评测集，采用 MAP、MRR、P@K、NDCG@K 与延迟指标对多种方法进行比较。当前基础评测集包含 {base_eval['count']} 条查询，视觉意图评测集包含 {mm_eval['count']} 条查询。结果表明，语义检索能够明显缓解跨语言词汇鸿沟，视觉对齐分支能够在颜色和外观相关查询上提供稳定排序证据，MM-Hybrid 在视觉意图评测集上达到 MAP={fmt(mm_by_method['mm_hybrid'], 'MAP')}、NDCG@10={fmt(mm_by_method['mm_hybrid'], 'NDCG@10')}。项目实现覆盖倒排索引、稀疏向量、稠密向量、近似近邻、多模态对齐、融合排序和交互式反馈等信息检索课程核心内容。",
     )
 
     replace_contains(
@@ -155,7 +242,7 @@ def main() -> None:
     replace_contains(
         doc,
         "MM-Hybrid 在原 Hybrid 基础上加入视觉辅助项",
-        "MM-Hybrid 在原 Hybrid 基础上加入视觉辅助项，最终权重为：score = 0.50 * semantic + 0.20 * visual + 0.20 * bm25 + 0.07 * lexical + 0.03 * rank_bonus。该公式保留原 Hybrid 作为强文本基线，同时让 CLIP 视觉对齐分数拥有明确权重，便于通过消融实验观察视觉分支的贡献。",
+        "MM-Hybrid 在原 Hybrid 基础上加入视觉辅助项，最终权重为：score = 0.50 * semantic + 0.25 * visual + 0.15 * bm25 + 0.10 * lexical + 0.00 * rank_bonus。该公式保留原 Hybrid 作为强文本基线，同时让 CLIP 视觉对齐分数拥有明确权重，便于通过消融实验观察视觉分支的贡献。",
     )
     replace_contains(
         doc,
@@ -164,42 +251,69 @@ def main() -> None:
     )
     replace_contains(
         doc,
-        "多模态补充实验显示",
-        f"多模态补充实验显示，Visual-only 虽然弱于完整融合模型，但能够独立根据渲染图像和 CLIP 视觉向量完成一部分跨模态召回，MAP={fmt(mm_by_method['visual'], 'MAP')}、NDCG@10={fmt(mm_by_method['visual'], 'NDCG@10')}。MM-Hybrid 融合视觉信号后，在多模态专用集上取得 MAP={fmt(mm_by_method['mm_hybrid'], 'MAP')}、NDCG@10={fmt(mm_by_method['mm_hybrid'], 'NDCG@10')}，高于原 Hybrid 的 MAP={fmt(mm_by_method['hybrid'], 'MAP')}、NDCG@10={fmt(mm_by_method['hybrid'], 'NDCG@10')}。该结果说明视觉模态不是单纯展示，而是进入了实际排序计算。",
+        "评测部分包含两个查询集合",
+        f"评测部分包含两个查询集合。基础评测集 data/eval_queries.json 共 {base_eval['count']} 条查询，其中{lang_summary(base_eval)}，共 {base_eval['relevant_total']} 个相关标签。视觉意图评测集 data/eval_queries_multimodal.json 共 {mm_eval['count']} 条查询，其中{lang_summary(mm_eval)}，强调颜色、形状、图形外观和组合视觉特征，共 {mm_eval['relevant_total']} 个相关标签。",
     )
     replace_contains(
         doc,
-        "7.2 ",
-        "7.2 多路检索算法的离线效果对比与多模态消融实验分析",
+        "表 7-1 展示视觉意图评测集上的主要结果",
+        f"表 7-1 展示 {mm_eval['count']} 条视觉意图评测查询上的主要结果。该集合更能体现颜色、形状和图形外观对排序的影响，因此同时纳入文本、视觉和融合方法进行比较。",
     )
     replace_contains(
         doc,
-        "本次报告重新运行了本地评估流程",
-        "本次报告重新运行了本地评估流程。下表以多模态专用评测集为核心，覆盖 BM25、TF-IDF、Dense、Bi-Encoder、HNSW、Hybrid、Visual 和 MM-Hybrid，重点观察视觉分支对颜色、形状和图形外观相关查询的贡献。",
+        "结果显示，Dense 与 Bi-Encoder",
+        f"结果显示，Dense 与 Bi-Encoder 在 MAP 和 MRR 上保持强文本语义基线，说明多语言语义编码能够稳定处理短查询和跨语言表达。Visual 的 MAP={fmt(mm_by_method['visual'], 'MAP')}，NDCG@10={fmt(mm_by_method['visual'], 'NDCG@10')}，说明视觉对齐分支能够在部分颜色、形状和外观查询上把相关候选提前。MM-Hybrid 的 MAP 达到 {fmt(mm_by_method['mm_hybrid'], 'MAP')}，NDCG@10 达到 {fmt(mm_by_method['mm_hybrid'], 'NDCG@10')}，高于 Hybrid 的 {fmt(mm_by_method['hybrid'], 'MAP')} 和 {fmt(mm_by_method['hybrid'], 'NDCG@10')}，表明视觉分数对最终排序具有有效贡献。",
     )
     replace_contains(
         doc,
-        "从结果看，",
-        "从结果看，Dense 与 Bi-Encoder 仍是强文本语义基线，Visual-only 具备独立跨模态召回能力，MM-Hybrid 在 MAP 和 NDCG@10 上高于原 Hybrid，说明视觉对齐分数能够补充纯文本融合排序。HNSW 的效果接近精确向量检索，说明图索引在当前参数下保留了较好的近邻质量。",
+        "消融结果显示，去除视觉分支后",
+        f"消融结果显示，去除视觉分支后，MAP 从 {fmt(ab_by_method['mm_hybrid'], 'MAP')} 降至 {fmt(ab_by_method['mm_hybrid_no_visual'], 'MAP')}，NDCG@10 从 {fmt(ab_by_method['mm_hybrid'], 'NDCG@10')} 降至 {fmt(ab_by_method['mm_hybrid_no_visual'], 'NDCG@10')}；去除词法分支后 MAP 为 {fmt(ab_by_method['mm_hybrid_no_lexical'], 'MAP')}。这说明在视觉意图评测集中，颜色、外观和图形组合信号对排序贡献更明显，视觉分支已经进入实际排序计算。",
+    )
+    replace_contains(
+        doc,
+        "表 7-2 MM-Hybrid 消融实验结果",
+        "表 7-2 多模态消融实验结果（data/eval_queries_multimodal.json）",
     )
     replace_contains(
         doc,
         "从课程能力映射来看",
-        "从课程能力映射来看，项目覆盖了信息检索中的多个关键主题：倒排索引和词项权重对应 BM25/TF-IDF；向量空间和语义匹配对应 Dense/Bi-Encoder；视觉渲染、CLIP 图像编码和线性投影对应多模态对齐；效率扩展对应 HNSW；排序优化对应 Hybrid、MM-Hybrid 和重排序；系统评价对应 MAP、MRR、NDCG 和延迟统计；交互式检索则体现在用户反馈和可视化探索中。",
+        "从课程能力映射来看，项目覆盖了信息检索中的多个关键主题：倒排索引和词项权重对应 BM25/TF-IDF；向量空间和语义匹配对应 Dense/Bi-Encoder；视觉渲染、openai/clip-vit-base-patch32 的 CLIP 图像编码和线性投影对应多模态对齐；效率扩展对应 HNSW；排序优化对应 Hybrid、MM-Hybrid 和重排序；系统评价对应 MAP、MRR、NDCG 和延迟统计；交互式检索则体现在用户反馈和可视化探索中。",
     )
     replace_contains(
         doc,
-        "视觉分支目前采用",
-        "视觉分支目前采用通用 CLIP 图像编码器和线性投影，优势是本地可复现、实现透明，但仍受平台字体渲染、极小图标细节、肤色/组合 Emoji 和通用 CLIP 对符号图像理解能力的限制，不等同于专门训练的 Emoji 多模态模型。",
+        "（3）视觉分支使用通用 CLIP",
+        "（3）视觉分支使用 openai/clip-vit-base-patch32 与线性投影，受字体渲染、小图标细节、肤色变体和组合 Emoji 影响，不等同于专门训练的 Emoji 多模态模型。",
     )
     replace_contains(
         doc,
-        "SigLIP",
-        "进一步尝试 SigLIP、EVA-CLIP 等图文预训练模型，或使用 Emoji 图像-文本对进行轻量微调，使视觉模态获得更强的符号语义和细粒度颜色/形状区分能力。",
+        "（1）扩展评测集到 200 条以上",
+        "（1）继续扩展视觉意图、网络语义、错别字、多轮反馈和跨语言混合难例，并引入分级相关性标注。",
+    )
+    replace_contains(
+        doc,
+        "（4）尝试 SigLIP",
+        "（4）尝试 SigLIP、EVA-CLIP 等图文预训练模型，或使用 Emoji 图像-文本对进行轻量微调，使视觉模态获得更强的符号语义和细粒度颜色/形状区分能力。",
     )
 
     # Architecture and artifact tables.
     if len(doc.tables) >= 8:
+        table_stats = doc.tables[3]
+        set_table(
+            table_stats,
+            [
+                ["数据统计项", "当前结果"],
+                ["主数据集记录数", str(corpus_stats["records"])],
+                ["类别数量", str(corpus_stats["category_count"])],
+                ["category 缺失数", str(corpus_stats["missing_category"])],
+                ["keywords 平均长度", f"{corpus_stats['keywords_avg']:.2f}"],
+                ["keywords 最小/最大长度", f"{corpus_stats['keywords_min']} / {corpus_stats['keywords_max']}"],
+                ["基础评测查询数", f"{base_eval['count']}（{lang_summary(base_eval)}）"],
+                ["基础评测相关标签数", str(base_eval["relevant_total"])],
+                ["视觉意图评测查询数", f"{mm_eval['count']}（{lang_summary(mm_eval)}）"],
+                ["视觉意图相关标签数", str(mm_eval["relevant_total"])],
+            ],
+        )
+
         table_arch = doc.tables[1]
         table_arch.rows[2].cells[2].text = "构建倒排索引、词法语料、TF-IDF 模型、稠密向量、HNSW 图索引和 CLIP 视觉对齐缓存。"
         table_arch.rows[3].cells[2].text = "实现 BM25、TF-IDF、Dense、Bi-Encoder、HNSW、Visual、Hybrid、MM-Hybrid、重排序和缓存校验。"
@@ -223,7 +337,7 @@ def main() -> None:
 
         # Main multimodal result table.
         wanted = ["bm25", "tfidf", "dense", "bi_encoder", "hnsw", "hybrid", "visual", "mm_hybrid"]
-        result_rows = [["Method", "MAP", "MRR", "P@5", "NDCG@5", "P@10", "NDCG@10"]]
+        result_rows = [["方法", "MAP", "MRR", "P@5", "NDCG@5", "P@10", "NDCG@10"]]
         for method in wanted:
             row = mm_by_method[method]
             result_rows.append([
@@ -237,9 +351,21 @@ def main() -> None:
             ])
         set_table(doc.tables[8], result_rows)
 
+        ab_rows = [["消融变体", "MAP", "MRR", "P@5", "NDCG@10"]]
+        for method in ["mm_hybrid", "mm_hybrid_no_visual", "mm_hybrid_no_lexical", "visual"]:
+            row = ab_by_method[method]
+            ab_rows.append([
+                normalize_method(method),
+                fmt(row, "MAP"),
+                fmt(row, "MRR"),
+                fmt(row, "P@5"),
+                fmt(row, "NDCG@10"),
+            ])
+        set_table(doc.tables[9], ab_rows)
+
         if len(doc.tables) > 10:
             latency_rows = [
-                ["Method", "avg ms", "p50 ms", "p95 ms", "说明"],
+                ["方法", "平均延迟/ms", "p50/ms", "p95/ms", "说明"],
                 ["BM25", "1.79", "1.74", "2.85", "轻量词法检索，速度最快之一。"],
                 ["TF-IDF", "0.78", "0.66", "1.34", "稀疏矩阵余弦相似度，延迟最低。"],
                 ["Dense", "33.80", "31.45", "58.41", "Sentence-Transformers 查询编码与矩阵检索。"],
@@ -252,8 +378,8 @@ def main() -> None:
             ]
             set_table(doc.tables[10], latency_rows)
 
-    # Add a compact ablation table once.
-    if not any("表 7-2 多模态消融实验结果" in p.text for p in doc.paragraphs):
+    # Add a compact ablation table only for older report drafts that do not have one.
+    if len(doc.tables) <= 9 and not any("表 7-2 多模态消融实验结果" in p.text for p in doc.paragraphs):
         anchor = find_para(doc, "该结果说明视觉模态不是单纯展示")
         title = insert_after(anchor, "表 7-2 多模态消融实验结果（data/eval_queries_multimodal.json）", anchor.style)
         ab_rows = [["Variant", "MAP", "MRR", "P@5", "NDCG@10"]]
@@ -268,6 +394,7 @@ def main() -> None:
             ])
         add_table_after(doc, title, ab_rows)
 
+    mark_fields_dirty(doc)
     doc.save(str(REPORT))
     print(f"updated {REPORT}")
     print(f"backup {BACKUP}")

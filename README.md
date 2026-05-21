@@ -104,11 +104,7 @@ API 延迟基准（用于课程报告中的效率指标）：
 python eval/benchmark_api.py --runs 3 --top-k 10
 ```
 
-当前（50 条标注查询）最佳方法为 `bi_encoder`：
-
-- MAP: `0.3503`
-- MRR: `0.8033`
-- NDCG@10: `0.5264`
+当前评测池已扩充到 1000 条查询（含原 50 条标注种子）；请以重新运行 `python eval/evaluate.py --all` 的结果为准更新最佳方法与指标。
 
 ## 说明
 

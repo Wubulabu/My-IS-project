@@ -127,7 +127,7 @@
   <div id="status-bar">
     <span id="status-text"></span>
     <span id="exclude-badge">
-      已排除 <span id="exclude-count">0</span> 个
+      反馈 <span id="exclude-count">0</span>
       <button class="clear-exclude" id="clear-exclude-btn">✕</button>
     </span>
     <span id="method-badge">HYBRID</span>
@@ -229,7 +229,7 @@
   <!-- ── 评测板块 ────────────────────────────────────────────── -->
   <section class="eval-section">
     <h2>📊 算法评测对比 <span class="section-kicker">(Algorithm Evaluation)</span></h2>
-    <p class="section-desc">在 50 条标注查询上对比各检索方法的精准率、召回率、NDCG 等指标</p>
+    <p class="section-desc">每轮从标注查询集中随机抽样，对比各检索方法在本轮样本上的精准率、召回率、NDCG 等指标</p>
     
     <div class="metric-desc">
       <!-- MAP -->
@@ -317,7 +317,7 @@
       <!-- Live Arena Race Track -->
       <div id="arena-track" class="arena-container">
         <div class="arena-header">
-          <h3>🏎️ 算法竞速实况 <span id="arena-status">( 0 / 50 )</span></h3>
+          <h3>🏎️ 算法竞速实况 <span id="arena-status">( 0 / ? )</span></h3>
           <p id="arena-current-query" class="arena-query-display">等待注入发令枪...</p>
         </div>
         <div id="arena-lanes" class="arena-lanes">
